@@ -16,12 +16,25 @@ from abc import ABC
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
 
-from huggingface_hub import HfApi, ModelCard, ModelCardData, ModelFilter
+from huggingface_hub import HfApi, ModelCard, ModelCardData
 from huggingface_hub import get_token as get_hf_token
 from huggingface_hub.hf_api import ModelInfo
 from huggingface_hub.utils import SoftTemporaryDirectory
 
 from nemo.utils import logging
+
+# Compatibility class for ModelFilter (removed in newer huggingface_hub versions)
+class ModelFilter:
+    """Compatibility class for ModelFilter functionality."""
+    def __init__(self, library=None, language=None, task=None, tags=None, **kwargs):
+        self.library = library
+        self.language = language
+        self.task = task
+        self.tags = tags
+        self.resolve_card_info = False
+        self.limit_results = None
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 
 class HuggingFaceFileIO(ABC):
@@ -135,7 +148,7 @@ class HuggingFaceFileIO(ABC):
         all_results = []  # type: List[ModelInfo]
 
         for mfilter in model_filter:
-            cardData = None
+            cardData = False
             limit = None
 
             if hasattr(mfilter, 'resolve_card_info') and mfilter.resolve_card_info is True:
@@ -144,8 +157,19 @@ class HuggingFaceFileIO(ABC):
             if hasattr(mfilter, 'limit_results') and mfilter.limit_results is not None:
                 limit = mfilter.limit_results
 
+            # Build filter kwargs for new API
+            filter_kwargs = {}
+            if hasattr(mfilter, 'library') and mfilter.library:
+                filter_kwargs['library'] = mfilter.library
+            if hasattr(mfilter, 'language') and mfilter.language:
+                filter_kwargs['language'] = mfilter.language
+            if hasattr(mfilter, 'task') and mfilter.task:
+                filter_kwargs['task'] = mfilter.task
+            if hasattr(mfilter, 'tags') and mfilter.tags:
+                filter_kwargs['tags'] = mfilter.tags
+
             results = api.list_models(
-                filter=mfilter, token=hf_token, sort="lastModified", direction=-1, cardData=cardData, limit=limit,
+                token=hf_token, sort="lastModified", direction=-1, cardData=cardData, limit=limit, **filter_kwargs
             )  # type: Iterable[ModelInfo]
 
             for result in results:
